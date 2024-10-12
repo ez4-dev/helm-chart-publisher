@@ -1,0 +1,69 @@
+name: Check and Publish Helm Charts
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1' # At 02:00 on Monday
+
+jobs:
+  matrix-setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - id: matrix
+        run: |
+          echo "value=$(cat repositories.json)" >> $GITHUB_OUTPUT
+      - run: |
+          echo "${{ steps.matrix.outputs.value }}"
+
+  check-and-publish-helm-charts:
+    needs: ["matrix-setup"]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        value: ${{fromJSON(needs.matrix-setup.outputs.matrix)}}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v1
+
+      - name: Login to OCI Registry
+        uses: docker/login-action@v1
+        with:
+          registry: registry-1.docker.io
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Read repositories list and loop
+        run: |
+          REPO_INFO=${{ matrix.value }} # path to repositories, chart_paths, and tag_regex
+          OCI_REGISTRY='oci://registry-1.docker.io/ez4devcharts' # modify this if your registry differs
+          
+          # Ensure jq is installed
+          sudo apt-get update && sudo apt-get install -y jq
+
+          # Parse repo info
+          REPO_NAME=$(echo $REPO_INFO | jq -r '.repository')
+          CHART_PATH=$(echo $REPO_INFO | jq -r '.chart_path')
+          CHART_NAME=$(echo $REPO_INFO | jq -r '.chart_name')
+          TAG_REGEX=$(echo $REPO_INFO | jq -r '.tag_regex')
+          
+          # Fetch latest tag matching the regex
+          LATEST_TAG=$(git ls-remote --tags https://github.com/$REPO_NAME.git | grep -oP "$TAG_REGEX" | sort -rV | head -n1)
+          
+          # Check if Helm chart is published
+          helm show chart "$OCI_REGISTRY/$CHART_NAME" --version "$LATEST_TAG" &> /dev/null
+          if [ $? -ne 0 ]; then
+            # Pack and push the chart
+            echo "Packaging and pushing the chart for $CHART_NAME with tag $LATEST_TAG"
+            helm package $CHART_PATH --version $LATEST_TAG
+            CHART_FILE=$CHART_NAME-$LATEST_TAG.tgz
+            helm chart save $CHART_FILE $OCI_REGISTRY/$CHART_NAME:$LATEST_TAG
+            helm chart push $OCI_REGISTRY/$CHART_NAME:$LATEST_TAG
+          else
+            echo "Helm chart for $CHART_NAME with tag $LATEST_TAG is already published."
+          fi
+        shell: bash
