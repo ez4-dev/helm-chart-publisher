@@ -9,60 +9,92 @@ jobs:
   matrix-setup:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.matrix.outputs.value }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - id: matrix
-        run: |
-          echo "value=$(jq -c < repositories.json | jq -R | sed -e 's/^"//' -e 's/"$//')" >> $GITHUB_OUTPUT
-      - run: |
-          echo "${{ steps.matrix.outputs.value }}"
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Get Matrix
+        id: matrix
+        uses: Surnet/get-json-matrix@v1
+        with:
+          filepath: ./repositories.json
 
   check-and-publish-helm-charts:
-    needs: ["matrix-setup"]
+    name: ${{ matrix.key }}
+    needs: matrix-setup
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        value: ${{fromJSON(needs.matrix-setup.outputs.matrix)}}
+      matrix: ${{ fromJson(needs.matrix-setup.outputs.matrix) }}
     steps:
       - name: Set up Helm
         uses: azure/setup-helm@v4
 
-      - name: Login to OCI Registry
-        uses: docker/login-action@v3
-        with:
-          registry: registry-1.docker.io
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Read repositories list and loop
+      - name: ${{ matrix.key }} > Check if latest tag exist
+        id: check-exist
+        env:
+          REPO_INFO: ${{ toJSON(matrix.value) }} # path to repositories, chart_paths, and tag_regex
         run: |
-          REPO_INFO=${{ matrix.value }} # path to repositories, chart_paths, and tag_regex
+          set -x
+          set +e
           OCI_REGISTRY='oci://registry-1.docker.io/ez4devcharts' # modify this if your registry differs
           
           # Ensure jq is installed
           sudo apt-get update && sudo apt-get install -y jq
 
           # Parse repo info
-          REPO_NAME=$(echo $REPO_INFO | jq -r '.repository')
+          REPO_NAME=${{ matrix.key }}
           CHART_PATH=$(echo $REPO_INFO | jq -r '.chart_path')
           CHART_NAME=$(echo $REPO_INFO | jq -r '.chart_name')
           TAG_REGEX=$(echo $REPO_INFO | jq -r '.tag_regex')
           
           # Fetch latest tag matching the regex
-          LATEST_TAG=$(git ls-remote --tags https://github.com/$REPO_NAME.git | grep -oP "$TAG_REGEX" | sort -rV | head -n1)
+          git ls-remote --tags https://github.com/$REPO_NAME.git | grep -oP 'refs/.*' > tags_refs.txt
+          LATEST_TAG=$(grep -oP "$TAG_REGEX" ./tags_refs.txt | sort -rV | head -n1)
+          TAG_REF=$(grep $LATEST_TAG ./tags_refs.txt)
+          echo "tag-ref=$TAG_REF" >> $GITHUB_OUTPUT
           
           # Check if Helm chart is published
           helm show chart "$OCI_REGISTRY/$CHART_NAME" --version "$LATEST_TAG" &> /dev/null
           if [ $? -ne 0 ]; then
-            # Pack and push the chart
-            echo "Packaging and pushing the chart for $CHART_NAME with tag $LATEST_TAG"
-            helm package $CHART_PATH --version $LATEST_TAG
-            CHART_FILE=$CHART_NAME-$LATEST_TAG.tgz
-            helm chart save $CHART_FILE $OCI_REGISTRY/$CHART_NAME:$LATEST_TAG
-            helm chart push $OCI_REGISTRY/$CHART_NAME:$LATEST_TAG
-          else
-            echo "Helm chart for $CHART_NAME with tag $LATEST_TAG is already published."
+            echo "helm-ver=$LATEST_TAG" >> $GITHUB_OUTPUT
+            exit 0
           fi
+
+          echo "Stop here"
+          exit 1
         shell: bash
+
+      - name: Clone repo ${{ matrix.key }}
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ matrix.key }}
+          ref: ${{ steps.check-exist.outputs.tag-ref }}
+          path: ./target_repo
+
+      - name: Login to OCI registry
+        run: |
+          helm registry login \
+            --username ${{ secrets.DOCKER_USERNAME }} \
+            --password ${{ secrets.DOCKER_PASSWORD }} \
+            registry-1.docker.io
+
+      - name: Publish chart ${{ matrix.key }}
+        env:
+          REPO_INFO: ${{ toJSON(matrix.value) }} # path to repositories, chart_paths, and tag_regex
+          REPO_NAME: ${{ matrix.key }}
+          LATEST_TAG: ${{ steps.check-exist.outputs.helm-ver }}
+        run: |
+          set -x
+          OCI_REGISTRY='oci://registry-1.docker.io/ez4devcharts' # modify this if your registry differs
+
+          # Parse repo info
+          CHART_PATH=$(echo $REPO_INFO | jq -r '.chart_path')
+          CHART_NAME=$(echo $REPO_INFO | jq -r '.chart_name')
+          
+          # Pack and push the chart
+          echo "Packaging and pushing the chart for $CHART_NAME with tag $LATEST_TAG"
+          helm dep build target_repo/$CHART_PATH
+          helm package target_repo/$CHART_PATH --version $LATEST_TAG
+          CHART_FILE=$CHART_NAME-$LATEST_TAG.tgz
+          helm push $CHART_FILE $OCI_REGISTRY
