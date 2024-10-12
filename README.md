@@ -1,3 +1,5 @@
+[![Check and Publish Helm Charts](https://github.com/ez4-dev/helm-chart-publisher/actions/workflows/weekly-scanner.yaml/badge.svg)](https://github.com/ez4-dev/helm-chart-publisher/actions/workflows/weekly-scanner.yaml)
+
 # Helm Chart Publisher
 This publisher attempts to scan and release valuable Helm charts that have not yet been made available on any recognized public registries.
 
