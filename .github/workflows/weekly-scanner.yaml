@@ -58,14 +58,13 @@ jobs:
           helm show chart "$OCI_REGISTRY/$CHART_NAME" --version "$LATEST_TAG" &> /dev/null
           if [ $? -ne 0 ]; then
             echo "helm-ver=$LATEST_TAG" >> $GITHUB_OUTPUT
-            exit 0
+          else
+            echo "Tag $LATEST_TAG exists already. Stop here!"
           fi
-
-          echo "Stop here"
-          exit 1
         shell: bash
 
       - name: Clone repo ${{ matrix.key }}
+        if: steps.check-exist.outputs.helm-ver != ''
         uses: actions/checkout@v3
         with:
           repository: ${{ matrix.key }}
@@ -73,6 +72,7 @@ jobs:
           path: ./target_repo
 
       - name: Login to OCI registry
+        if: steps.check-exist.outputs.helm-ver != ''
         run: |
           helm registry login \
             --username ${{ secrets.DOCKER_USERNAME }} \
@@ -80,6 +80,7 @@ jobs:
             registry-1.docker.io
 
       - name: Publish chart ${{ matrix.key }}
+        if: steps.check-exist.outputs.helm-ver != ''
         env:
           REPO_INFO: ${{ toJSON(matrix.value) }} # path to repositories, chart_paths, and tag_regex
           REPO_NAME: ${{ matrix.key }}

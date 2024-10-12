@@ -5,7 +5,7 @@ This publisher attempts to scan and release valuable Helm charts that have not y
 
 ## The registry
 
-All these charts will be distributed to Docker Hub in OCI format. Your usage can be as simple as:
+All these charts will be distributed to [Docker Hub](https://hub.docker.com/u/ez4devcharts) in OCI format. Your usage can be as simple as:
 
 ```yaml
 dependencies:
@@ -17,3 +17,9 @@ dependencies:
 ## Contribution
 
 Your PRs are welcome. Feel free to add your repository or help me enhance the workflow.
+
+## TODO
+
+- [ ] Support build from branch
+- [ ] Support latest tag
+- [ ] PR validator
