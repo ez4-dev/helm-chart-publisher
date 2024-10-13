@@ -3,7 +3,7 @@
 # Helm Chart Publisher
 This publisher attempts to scan and release valuable Helm charts that have not yet been made available on any recognized public registries.
 
-**DISCLAIMER**: This is made for personal use, so if you find anything that made you not confort with, feel free to drop an issue. I will take it seriously.
+**DISCLAIMER**: This content is intended for personal use. Should you encounter anything that causes discomfort or dissatisfaction, please do not hesitate to raise an issue. I assure you that I will address it earnestly.
 
 ## The registry
 
