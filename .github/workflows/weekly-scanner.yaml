@@ -16,7 +16,7 @@ jobs:
 
       - name: Get Matrix
         id: matrix
-        uses: Surnet/get-json-matrix@v1
+        uses: Surnet/get-json-matrix@v2
         with:
           filepath: ./repositories.json
 
