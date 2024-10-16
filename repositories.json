@@ -7,7 +7,7 @@
     "ez4-dev/designate-certmanager-webhook": {
       "chart_path": "helm/designate-certmanager-webhook",
       "chart_name": "designate-certmanager-webhook",
-      "tag_regex": "helm-\\K[0-9]+\\.[0-9]+\\.[0-9]+"
+      "tag_regex": "helm-\\K[0-9]+\\.[0-9]+\\.[0-9]+-.*"
     },
     "ez4-dev/screwdriver-chart": {
       "chart_path": "",
